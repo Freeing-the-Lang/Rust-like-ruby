@@ -1,4 +1,4 @@
-name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3.2"
+name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3.3"
 
 on:
   push:
@@ -71,25 +71,60 @@ jobs:
         shell: bash
         run: |
           cd dist
-          ZIP_NAME="Rust-like-Ruby-v1.3.2-${{ runner.os }}.zip"
+          ZIP_NAME="Rust-like-Ruby-v1.3.3-${{ runner.os }}.zip"
           zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples output.log README.md LICENSE 2>/dev/null || zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples output.log
           echo "✅ Created: $ZIP_NAME"
           ls -lh *.zip
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
-      - name: "💾 Commit ProofLedger (self-healing)"
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add dist/proofledger.txt || true
-          git commit -m "🔄 Auto-update ProofLedger [${{ runner.os }}]" || echo "No new changes"
-          git push origin main || echo "Already up to date"
-
-      - name: "🏷️ Auto Tag (unique safe tag)"
-        if: github.ref == 'refs/heads/main'
+      # ---- 아래 3개 스텝은 Linux에서만 실행 (충돌 방지) ----
+      - name: "💾 Commit ProofLedger (rebase + retry)"
+        if: github.ref == 'refs/heads/main' && runner.os == 'Linux'
         shell: bash
         run: |
+          set -e
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 최신 가져오기 및 리베이스
+          git fetch origin main
+          git checkout -B main
+          git pull --rebase origin main || true
+
+          # 커밋 준비
+          git add dist/proofledger.txt || true
+
+          # 재시도 루프 (최대 5회)
+          tries=0
+          while [ $tries -lt 5 ]; do
+            if git commit -m "🔄 Auto-update ProofLedger [${{ runner.os }}]" >/dev/null 2>&1; then
+              if git push origin HEAD:main; then
+                echo "✅ Pushed ProofLedger to main"
+                exit 0
+              fi
+            else
+              echo "ℹ️ No changes to commit (maybe already updated)."
+              # 그래도 main이 뒤쳐지면 한 번 더 동기화 시도
+              git fetch origin main
+              git pull --rebase origin main || true
+              if git push origin HEAD:main; then
+                echo "✅ main is up-to-date"
+                exit 0
+              fi
+            fi
+            tries=$((tries+1))
+            echo "⚠️ Push failed (attempt $tries/5). Retrying after short delay..."
+            sleep $((RANDOM % 5 + 5))
+            git fetch origin main
+            git pull --rebase origin main || true
+          done
+          echo "❌ Failed to push after retries, continuing without failing the job."
+
+      - name: "🏷️ Auto Tag (unique safe tag)"
+        if: github.ref == 'refs/heads/main' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
           BASE_VERSION="v1.3.$(date +%Y%m%d%H%M)"
           VERSION="$BASE_VERSION"
           i=1
@@ -103,16 +138,16 @@ jobs:
           echo "TAG_NAME=$VERSION" >> $GITHUB_ENV
 
       - name: "🚀 Publish GitHub Release"
-        if: always()
+        if: runner.os == 'Linux' && env.TAG_NAME != ''
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: "Rust-like-Ruby ${{ env.TAG_NAME }}"
           body: |
-            🦀 **Rust-like-Ruby v1.3.2 Auto Release**
-            - OS: ${{ runner.os }}
+            🦀 **Rust-like-Ruby v1.3.3 Auto Release**
+            - OS: ${{ runner.os }} (packaged)
             - Includes: Executable, ProofLedger, Example, README, LICENSE (if present)
-            - Build verified on all platforms
+            - Auto rebase/push with retry to avoid non-fast-forward
           files: |
             dist/${{ env.ZIP_NAME }}
         env:
