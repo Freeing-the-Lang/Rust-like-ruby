@@ -1,0 +1,19 @@
+// Rust-like-Ruby example program
+
+let lang = "Rust-like-Ruby";
+
+fn greet(name) {
+  if name == "Rust-like-Ruby" {
+    print!("Hello, hybrid world!");
+  } else {
+    print!("Hi, " + name + "!");
+  }
+}
+
+fn add(a, b) {
+  return a + b;
+}
+
+greet(lang);
+let sum = add(5, 7);
+print!("5 + 7 = " + sum.to_s);
