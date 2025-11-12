@@ -1,10 +1,8 @@
-name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3.3"
+name: "🦀 Rust-like-Ruby — 3OS Auto Build & Release v1.3.4"
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    types: [ closed ]
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"
@@ -52,16 +50,13 @@ jobs:
       - name: "⚙️ Generate Executable"
         shell: bash
         run: |
-          echo "📦 Creating executable..."
           echo '#!/usr/bin/env ruby' > dist/rust_like_ruby
           cat src/rust_like_ruby.rb >> dist/rust_like_ruby
           chmod +x dist/rust_like_ruby
-          ls -lh dist/
 
       - name: "🧾 Generate ProofLedger"
         shell: bash
         run: |
-          echo "🔐 Generating ProofLedger..."
           sha256sum dist/rust_like_ruby > dist/proofledger.txt || shasum -a 256 dist/rust_like_ruby > dist/proofledger.txt
           echo "Timestamp: $(date -u)" >> dist/proofledger.txt
           echo "Runner: ${{ runner.os }}" >> dist/proofledger.txt
@@ -71,60 +66,14 @@ jobs:
         shell: bash
         run: |
           cd dist
-          ZIP_NAME="Rust-like-Ruby-v1.3.3-${{ runner.os }}.zip"
+          ZIP_NAME="Rust-like-Ruby-v1.3.4-${{ runner.os }}.zip"
           zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples output.log README.md LICENSE 2>/dev/null || zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples output.log
-          echo "✅ Created: $ZIP_NAME"
-          ls -lh *.zip
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
-      # ---- 아래 3개 스텝은 Linux에서만 실행 (충돌 방지) ----
-      - name: "💾 Commit ProofLedger (rebase + retry)"
+      - name: "🏷️ Sync & Tag (Linux only)"
         if: github.ref == 'refs/heads/main' && runner.os == 'Linux'
         shell: bash
         run: |
-          set -e
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # 최신 가져오기 및 리베이스
-          git fetch origin main
-          git checkout -B main
-          git pull --rebase origin main || true
-
-          # 커밋 준비
-          git add dist/proofledger.txt || true
-
-          # 재시도 루프 (최대 5회)
-          tries=0
-          while [ $tries -lt 5 ]; do
-            if git commit -m "🔄 Auto-update ProofLedger [${{ runner.os }}]" >/dev/null 2>&1; then
-              if git push origin HEAD:main; then
-                echo "✅ Pushed ProofLedger to main"
-                exit 0
-              fi
-            else
-              echo "ℹ️ No changes to commit (maybe already updated)."
-              # 그래도 main이 뒤쳐지면 한 번 더 동기화 시도
-              git fetch origin main
-              git pull --rebase origin main || true
-              if git push origin HEAD:main; then
-                echo "✅ main is up-to-date"
-                exit 0
-              fi
-            fi
-            tries=$((tries+1))
-            echo "⚠️ Push failed (attempt $tries/5). Retrying after short delay..."
-            sleep $((RANDOM % 5 + 5))
-            git fetch origin main
-            git pull --rebase origin main || true
-          done
-          echo "❌ Failed to push after retries, continuing without failing the job."
-
-      - name: "🏷️ Auto Tag (unique safe tag)"
-        if: github.ref == 'refs/heads/main' && runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -e
           BASE_VERSION="v1.3.$(date +%Y%m%d%H%M)"
           VERSION="$BASE_VERSION"
           i=1
@@ -132,22 +81,34 @@ jobs:
             VERSION="${BASE_VERSION}-rev${i}"
             ((i++))
           done
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git pull --rebase origin main || true
           echo "✅ Creating unique tag: $VERSION"
           git tag -a "$VERSION" -m "Automated release $VERSION"
           git push origin "$VERSION"
           echo "TAG_NAME=$VERSION" >> $GITHUB_ENV
 
-      - name: "🚀 Publish GitHub Release"
-        if: runner.os == 'Linux' && env.TAG_NAME != ''
+      - name: "📡 Fetch Tag (Non-Linux)"
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          git fetch --tags
+          LATEST=$(git tag --sort=-creatordate | head -n 1)
+          echo "TAG_NAME=$LATEST" >> $GITHUB_ENV
+          echo "ℹ️ Using existing tag: $LATEST"
+
+      - name: "🚀 Publish GitHub Release (each OS)"
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
-          name: "Rust-like-Ruby ${{ env.TAG_NAME }}"
+          name: "Rust-like-Ruby ${{ env.TAG_NAME }} (${{ runner.os }})"
           body: |
-            🦀 **Rust-like-Ruby v1.3.3 Auto Release**
-            - OS: ${{ runner.os }} (packaged)
+            🦀 **Rust-like-Ruby v1.3.4 Auto Release**
+            - OS: ${{ runner.os }}
             - Includes: Executable, ProofLedger, Example, README, LICENSE (if present)
-            - Auto rebase/push with retry to avoid non-fast-forward
+            - Multi-OS synchronized release build
           files: |
             dist/${{ env.ZIP_NAME }}
         env:
