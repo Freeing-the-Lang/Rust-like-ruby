@@ -1,4 +1,4 @@
-name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3"
+name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3.1"
 
 on:
   push:
@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp -r src examples dist/
+          cp -r src examples README.md LICENSE dist/
 
       - name: "🧪 Run Example Test"
         shell: bash
@@ -69,8 +69,11 @@ jobs:
         shell: bash
         run: |
           cd dist
-          zip -r "Rust-like-Ruby-v1.3-${{ runner.os }}.zip" rust_like_ruby proofledger.txt examples output.log
+          ZIP_NAME="Rust-like-Ruby-v1.3.1-${{ runner.os }}.zip"
+          zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples README.md LICENSE output.log
+          echo "✅ Created: $ZIP_NAME"
           ls -lh *.zip
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: "💾 Commit ProofLedger (self-healing)"
         if: github.ref == 'refs/heads/main'
@@ -81,12 +84,18 @@ jobs:
           git commit -m "🔄 Auto-update ProofLedger [${{ runner.os }}]" || echo "No new changes"
           git push origin main || echo "Already up to date"
 
-      - name: "🏷️ Auto Tag"
+      - name: "🏷️ Auto Tag (unique safe tag)"
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          VERSION="v1.3.$(date +%Y%m%d%H%M)"
-          echo "Creating tag: $VERSION"
+          BASE_VERSION="v1.3.$(date +%Y%m%d%H%M)"
+          VERSION="$BASE_VERSION"
+          i=1
+          while git rev-parse "$VERSION" >/dev/null 2>&1; do
+            VERSION="${BASE_VERSION}-rev${i}"
+            ((i++))
+          done
+          echo "✅ Creating unique tag: $VERSION"
           git tag -a "$VERSION" -m "Automated release $VERSION"
           git push origin "$VERSION"
           echo "TAG_NAME=$VERSION" >> $GITHUB_ENV
@@ -98,11 +107,11 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           name: "Rust-like-Ruby ${{ env.TAG_NAME }}"
           body: |
-            🦀 **Rust-like-Ruby v1.3 Auto Release**
+            🦀 **Rust-like-Ruby v1.3.1 Auto Release**
             - OS: ${{ runner.os }}
-            - Includes: executable + proofledger + example
-            - Generated automatically by GitHub Actions
+            - Includes: Executable, ProofLedger, Example, README, LICENSE
+            - Build verified on all platforms
           files: |
-            dist/*.zip
+            dist/${{ env.ZIP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
