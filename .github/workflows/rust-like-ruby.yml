@@ -1,13 +1,13 @@
-name: "🦀 Rust-like-Ruby — Hybrid Script Build & Test v1.0"
+name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3"
 
 on:
   push:
     branches: [ main ]
   pull_request:
     types: [ closed ]
+  workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-3os:
+  build-release:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -33,35 +33,76 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
-          bundler-cache: true
 
-      - name: "📦 Verify Interpreter"
+      - name: "🏗️ Prepare Build Directory"
         shell: bash
         run: |
-          ruby -v
-          echo "✅ Ruby environment ready."
+          mkdir -p dist
+          cp -r src examples dist/
 
-      - name: "🧪 Run Example Script"
+      - name: "🧪 Run Example Test"
         shell: bash
         run: |
-          ruby src/rust_like_ruby.rb examples/hello.rsrb > output.log
-          echo "✅ Execution done."
-          cat output.log
+          ruby src/rust_like_ruby.rb examples/hello.rsrb > dist/output.log
+          echo "✅ Test execution complete."
+          cat dist/output.log
+
+      - name: "⚙️ Generate Executable"
+        shell: bash
+        run: |
+          echo "📦 Creating executable..."
+          echo '#!/usr/bin/env ruby' > dist/rust_like_ruby
+          cat src/rust_like_ruby.rb >> dist/rust_like_ruby
+          chmod +x dist/rust_like_ruby
+          ls -lh dist/
 
       - name: "🧾 Generate ProofLedger"
         shell: bash
         run: |
-          sha256sum src/rust_like_ruby.rb > proofledger.txt || shasum -a 256 src/rust_like_ruby.rb > proofledger.txt
-          echo "Generated ProofLedger:"
-          cat proofledger.txt
+          echo "🔐 Generating ProofLedger..."
+          sha256sum dist/rust_like_ruby > dist/proofledger.txt || shasum -a 256 dist/rust_like_ruby > dist/proofledger.txt
+          echo "Timestamp: $(date -u)" >> dist/proofledger.txt
+          echo "Runner: ${{ runner.os }}" >> dist/proofledger.txt
+          cat dist/proofledger.txt
 
-      - name: "🚀 Auto Release (if tag)"
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: "📦 Create ZIP Package"
+        shell: bash
+        run: |
+          cd dist
+          zip -r "Rust-like-Ruby-v1.3-${{ runner.os }}.zip" rust_like_ruby proofledger.txt examples output.log
+          ls -lh *.zip
+
+      - name: "💾 Commit ProofLedger (self-healing)"
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist/proofledger.txt || true
+          git commit -m "🔄 Auto-update ProofLedger [${{ runner.os }}]" || echo "No new changes"
+          git push origin main || echo "Already up to date"
+
+      - name: "🏷️ Auto Tag"
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          VERSION="v1.3.$(date +%Y%m%d%H%M)"
+          echo "Creating tag: $VERSION"
+          git tag -a "$VERSION" -m "Automated release $VERSION"
+          git push origin "$VERSION"
+          echo "TAG_NAME=$VERSION" >> $GITHUB_ENV
+
+      - name: "🚀 Publish GitHub Release"
+        if: always()
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: "Rust-like-Ruby ${{ env.TAG_NAME }}"
+          body: |
+            🦀 **Rust-like-Ruby v1.3 Auto Release**
+            - OS: ${{ runner.os }}
+            - Includes: executable + proofledger + example
+            - Generated automatically by GitHub Actions
           files: |
-            src/rust_like_ruby.rb
-            examples/hello.rsrb
-            proofledger.txt
+            dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
