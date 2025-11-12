@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # ============================================================
-# Rust-like-Ruby — Hybrid Interpreter Prototype v1.0
+# Rust-like-Ruby — Hybrid Interpreter Prototype v1.1
 # Author: 0200134
 # License: MIT
 # ============================================================
@@ -41,7 +41,11 @@ class RustLikeRuby
       else
         block_false = nil
       end
-      cond ? run(block_true) : run(block_false) if block_false
+      if cond
+        run(block_true)
+      elsif block_false
+        run(block_false)
+      end
 
     when /^print!\((.+)\);?$/
       puts eval_expr($1)
@@ -76,12 +80,22 @@ class RustLikeRuby
     result
   end
 
-  # ---------------- Expression Eval ----------------
+  # ---------------- Safe Expression Eval ----------------
   def eval_expr(expr)
-    expr = expr.gsub(/\b(\w+)\b/) { @env[$1] if @env.key?($1) }
+    return nil if expr.nil? || expr.strip.empty?
+
+    expr = expr.gsub(/\b(\w+)\b/) do
+      if @env.key?($1)
+        val = @env[$1]
+        val.is_a?(String) ? "\"#{val}\"" : val.to_s
+      else
+        $1
+      end
+    end
+
     eval(expr)
   rescue => e
-    warn "Eval error: #{e}"
+    warn "Eval error: #{e} [expr=#{expr.inspect}]"
     nil
   end
 
