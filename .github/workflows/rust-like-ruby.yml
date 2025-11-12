@@ -1,4 +1,4 @@
-name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3.1"
+name: "🦀 Rust-like-Ruby — Auto Build, Zip & Release v1.3.2"
 
 on:
   push:
@@ -34,11 +34,13 @@ jobs:
         with:
           ruby-version: "3.3"
 
-      - name: "🏗️ Prepare Build Directory"
+      - name: "🏗️ Prepare Build Directory (safe copy)"
         shell: bash
         run: |
           mkdir -p dist
-          cp -r src examples README.md LICENSE dist/
+          cp -r src examples dist/ || true
+          [ -f README.md ] && cp README.md dist/ || echo "⚠️ README.md not found, skipping"
+          [ -f LICENSE ] && cp LICENSE dist/ || echo "⚠️ LICENSE not found, skipping"
 
       - name: "🧪 Run Example Test"
         shell: bash
@@ -69,8 +71,8 @@ jobs:
         shell: bash
         run: |
           cd dist
-          ZIP_NAME="Rust-like-Ruby-v1.3.1-${{ runner.os }}.zip"
-          zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples README.md LICENSE output.log
+          ZIP_NAME="Rust-like-Ruby-v1.3.2-${{ runner.os }}.zip"
+          zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples output.log README.md LICENSE 2>/dev/null || zip -r "$ZIP_NAME" rust_like_ruby proofledger.txt examples output.log
           echo "✅ Created: $ZIP_NAME"
           ls -lh *.zip
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
@@ -107,9 +109,9 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           name: "Rust-like-Ruby ${{ env.TAG_NAME }}"
           body: |
-            🦀 **Rust-like-Ruby v1.3.1 Auto Release**
+            🦀 **Rust-like-Ruby v1.3.2 Auto Release**
             - OS: ${{ runner.os }}
-            - Includes: Executable, ProofLedger, Example, README, LICENSE
+            - Includes: Executable, ProofLedger, Example, README, LICENSE (if present)
             - Build verified on all platforms
           files: |
             dist/${{ env.ZIP_NAME }}
