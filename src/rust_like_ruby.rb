@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # ============================================================
-# Rust-like-Ruby — Hybrid Interpreter Prototype v1.1
+# Rust-like-Ruby — Hybrid Interpreter Prototype v1.2
 # Author: 0200134
 # License: MIT
 # ============================================================
@@ -34,13 +34,27 @@ class RustLikeRuby
     when /^if\s+(.+)\s*\{/
       cond = eval_expr($1)
       block_true = extract_block(lines)
-      next_line = lines.peek.strip rescue nil
+
+      # safely peek next meaningful line
+      next_line = nil
+      loop do
+        peek = lines.peek.strip rescue nil
+        break unless peek
+        if peek.empty? || peek.start_with?("//")
+          lines.next
+          next
+        end
+        next_line = peek
+        break
+      end
+
       if next_line&.start_with?("else")
         lines.next
         block_false = extract_block(lines)
       else
         block_false = nil
       end
+
       if cond
         run(block_true)
       elsif block_false
@@ -94,6 +108,9 @@ class RustLikeRuby
     end
 
     eval(expr)
+  rescue SyntaxError
+    # swallow invalid partial syntax (e.g., isolated "else")
+    nil
   rescue => e
     warn "Eval error: #{e} [expr=#{expr.inspect}]"
     nil
