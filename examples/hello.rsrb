@@ -1,4 +1,4 @@
-// Rust-like-Ruby example program
+// Rust-like-Ruby v1.1 example
 
 let lang = "Rust-like-Ruby";
 
